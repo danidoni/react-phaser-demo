@@ -1,66 +1,7 @@
-(ns react-game-performance-prototype.game)
+(ns react-game-performance-prototype.game
+  (:require [react-game-performance-prototype.entities :as entities]))
 
 (def ^:const style #js {:font "20px Arial" :fill "#fff"})
-
-(defn create-background! [game place-item-fn]
-  (let [background (.sprite game.add 0 0 "backyard")]
-    (aset background "inputEnabled" true)
-    (.add background.events.onInputDown place-item-fn game)
-    background))
-
-(defn create-pet! [game]
-  (let [pet (.sprite game.add 100 400 "pet")]
-    (.setTo pet.anchor 0.5)
-    (.add pet.animations "funnyfaces" #js [1 2 3 2 1] 7 false)
-    (aset pet "inputEnabled" true)
-    (.enableDrag pet.input)
-    pet))
-
-(defn create-pick-item-fn [game-state clear-selection-fn type]
-  (fn [sprite _]
-    (if-not (:ui-blocked @game-state)
-      (do
-        (println "Picked item: " type)
-
-        (clear-selection-fn)
-        (aset sprite "alpha" 0.4)
-        (swap! game-state assoc-in [:selected-item] type)))))
-
-(defn create-apple! [game game-state clear-selection-fn]
-  (let [apple (.sprite game.add 72 570 "apple")]
-    (.setTo apple.anchor 0.5)
-    (aset apple "inputEnabled" true)
-    (.add apple.events.onInputDown (create-pick-item-fn game-state clear-selection-fn :apple) game)
-    apple))
-
-(defn create-candy! [game game-state clear-selection-fn]
-  (let [candy (.sprite game.add 144 570 "candy")]
-    (.setTo candy.anchor 0.5)
-    (aset candy "inputEnabled" true)
-    (.add candy.events.onInputDown (create-pick-item-fn game-state clear-selection-fn :candy) game)
-    candy))
-
-(defn create-toy! [game game-state clear-selection-fn]
-  (let [toy (.sprite game.add 216 570 "toy")]
-    (.setTo toy.anchor 0.5)
-    (aset toy "inputEnabled" true)
-    (.add toy.events.onInputDown (create-pick-item-fn game-state clear-selection-fn :toy) game)
-    toy))
-
-(defn create-rotate! [game rotate-pet-fn]
-  (let [rotate (.sprite game.add 288 570 "rotate")]
-    (.setTo rotate.anchor 0.5)
-    (aset rotate "inputEnabled" true)
-    (.add rotate.events.onInputDown rotate-pet-fn game)
-    rotate))
-
-(defn create-clear-selection-fn [game-state apple candy toy rotate]
-  (fn []
-    (aset @apple "alpha" 1)
-    (aset @candy "alpha" 1)
-    (aset @toy "alpha" 1)
-    (aset @rotate "alpha" 1)
-    (swap! game-state assoc-in [:selected-item] nil)))
 
 (defn stats [game-state]
   (:stats @game-state))
@@ -73,6 +14,32 @@
 
 (defn selected-item [game-state]
   (:selected-item @game-state))
+
+(defn ui-blocked [game-state]
+  (:ui-blocked @game-state))
+
+(defn create-new-item [game x y selected-item]
+  (let [item (.sprite game.add x y (name selected-item))]
+    (.setTo item.anchor 0.5)
+    item))
+
+(defn create-pick-item-fn [game-state clear-selection-fn type]
+  (fn [sprite _]
+    (if-not (:ui-blocked @game-state)
+      (do
+        (println "Picked item: " type)
+
+        (clear-selection-fn)
+        (aset sprite "alpha" 0.4)
+        (swap! game-state assoc-in [:selected-item] type)))))
+
+(defn create-clear-selection-fn [game-state apple candy toy rotate]
+  (fn []
+    (aset @apple "alpha" 1)
+    (aset @candy "alpha" 1)
+    (aset @toy "alpha" 1)
+    (aset @rotate "alpha" 1)
+    (swap! game-state assoc-in [:selected-item] nil)))
 
 (defn eat-item [game-state pet refresh-stats-fn clear-selection-fn new-item]
   (let [animations    (aget @pet "animations")
@@ -100,16 +67,9 @@
     (.add movement.onComplete #(eat-item game-state pet refresh-stats-fn clear-selection-fn new-item))
     (.start movement)))
 
-(defn ui-blocked [game-state]
-  (:ui-blocked @game-state))
-
-(defn create-new-item [game x y selected-item]
-  (let [item (.sprite game.add x y (name selected-item))]
-    (.setTo item.anchor 0.5)
-    item))
-
 (defn create-place-item-fn [game game-state pet refresh-stats-fn clear-selection-fn]
   (fn [sprite event]
+    (println "Placing item")
     (let [selected-item (selected-item game-state)
           ui-blocked (ui-blocked game-state)
           x (aget event.position "x")
@@ -188,10 +148,17 @@
    :ui-blocked false
    :selected-item nil})
 
+(defn listen [element event callback]
+  (-> @element
+      (aget "events")
+      (aget event)
+      (.add callback)))
+
 (defn state []
   (let [stats-decreaser (atom nil)
         health-text (atom nil)
         fun-text (atom nil)
+        fps-text (atom nil)
         background (atom nil)
         apple (atom nil)
         candy (atom nil)
@@ -208,18 +175,27 @@
              rotate-pet-fn      (create-rotate-pet-fn game game-state pet refresh-stats-fn clear-selection-fn)]
 
          (reset! game-state (new-game))
-         (reset! background (create-background! game place-item-fn))
-         (reset! pet (create-pet! game))
-         (reset! apple (create-apple! game game-state clear-selection-fn))
-         (reset! candy (create-candy! game game-state clear-selection-fn))
-         (reset! toy (create-toy! game game-state clear-selection-fn))
-         (reset! rotate (create-rotate! game rotate-pet-fn))
+
+         (reset! background (entities/create-background! game))
+         (reset! pet (entities/create-pet! game))
+         (reset! apple (entities/create-apple! game))
+         (reset! candy (entities/create-candy! game))
+         (reset! toy (entities/create-toy! game))
+         (reset! rotate (entities/create-rotate! game))
+
+         (listen background "onInputDown" place-item-fn)
+         (listen apple "onInputDown" (create-pick-item-fn game-state clear-selection-fn :apple))
+         (listen candy "onInputDown" (create-pick-item-fn game-state clear-selection-fn :candy))
+         (listen toy "onInputDown" (create-pick-item-fn game-state clear-selection-fn :toy))
+         (listen rotate "onInputDown" rotate-pet-fn)
 
          (.text game.add 10 20 "Health: " style)
          (.text game.add 140 20 "Fun: " style)
+         (.text game.add 270 20 "FPS: " style)
 
          (reset! health-text (.text game.add 80 20 "" style))
          (reset! fun-text (.text game.add 185 20 "" style))
+         (reset! fps-text (.text game.add 320 20 "" style))
 
          (refresh-stats-fn)
          (aset game.time "advancedTiming" true)
@@ -229,6 +205,7 @@
                                         (create-reduce-properties-fn game-state refresh-stats-fn)
                                         game))
          ))
+
       (update [game]
         (let [pet-health (:health (:pet (:stats @game-state)))
               pet-fun    (:fun (:pet (:stats @game-state)))]
@@ -237,10 +214,7 @@
             (do
               (aset @pet "frame" 4)
               (swap! game-state assoc-in [:ui-blocked] true)
-              (.add game.time.events 2000 (create-game-over-fn game) game))
-            ; (do
-            ;   (aset @health-text "text" pet-health)
-            ;   (aset @fun-text "text" pet-fun))
-            )))
+              (.add game.time.events 2000 (create-game-over-fn game) game)))))
+
       (render [game]
-        (println (aget game.time "fps"))))))
+        (aset @fps-text "text" (aget game.time "fps"))))))
